@@ -1,5 +1,8 @@
 // ============ src/routes/message.routes.js ============
 const { Message } = require('../models');
+const { User } = require('../models');
+const auth = require('../middlewares/auth');
+const express = require('express');
 
 const router5 = express.Router();
 

@@ -1,6 +1,8 @@
 // ============ src/routes/demande.routes.js ============
 const demandeController = require('../controllers/demandeController');
 const checkRole = require('../middlewares/roleCheck');
+const auth = require('../middlewares/auth');
+const express = require('express');
 
 const router2 = express.Router();
 

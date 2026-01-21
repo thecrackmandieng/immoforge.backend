@@ -1,5 +1,8 @@
 // ============ src/routes/user.routes.js ============
 const { User, Role } = require('../models');
+const express = require('express');
+const auth = require('../middlewares/auth');
+const checkRole = require('../middlewares/roleCheck');
 
 const router4 = express.Router();
 
