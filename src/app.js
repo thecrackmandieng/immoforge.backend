@@ -9,7 +9,7 @@ const errorHandler = require('./middlewares/errorHandler');
 const app = express();
 
 // Middlewares de sécurité
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } })); // les images /uploads sont chargées par le frontend
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true
@@ -18,7 +18,7 @@ app.use(cors({
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limite de 100 requêtes par IP
+  max: process.env.NODE_ENV === 'development' ? 2000 : 100, // limite par IP
   message: 'Trop de requêtes depuis cette IP, veuillez réessayer plus tard.'
 });
 app.use('/api/', limiter);

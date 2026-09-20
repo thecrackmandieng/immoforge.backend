@@ -55,6 +55,9 @@ const Bien = sequelize.define('Bien', {
     type: DataTypes.DECIMAL(15, 2),
     allowNull: true
   },
+  chambres: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
+  salles_bain: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
+  surface: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
   status_id: {
     type: DataTypes.BIGINT,
     allowNull: false,

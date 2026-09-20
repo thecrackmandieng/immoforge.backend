@@ -1,10 +1,29 @@
-const { Bien, BienImage, User, Zone, TypeBien, StatusBien, Tarif } = require('../models');
+const { sequelize, Bien, BienImage, User, Zone, TypeBien, StatusBien, Tarif, Caution, Acompte, Favori, Demande, Transaction } = require('../models');
 const { Op } = require('sequelize');
+const notify = require('../services/notify');
+const realtime = require('../services/realtime');
+
+// Prévient en direct le propriétaire, les admins et tous les visiteurs (catalogue public)
+const bienChanged = (bien, action) => {
+  const payload = { id: bien.id, titre: bien.titre, status_id: bien.status_id, action };
+  realtime.toUser(bien.proprietaire_id, 'bien:changed', payload);
+  realtime.toRole('admin', 'bien:changed', payload);
+  realtime.toAll('catalogue:changed', { id: bien.id, action });
+};
+
+const fullInclude = () => [
+  { model: TypeBien, as: 'type' },
+  { model: Zone, as: 'zone' },
+  { model: StatusBien, as: 'status' },
+  { model: BienImage, as: 'images' },
+  { model: Tarif, as: 'tarifs' },
+  { model: User, as: 'proprietaire', attributes: ['id', 'prenom', 'nom', 'email', 'telephone'] }
+];
 
 // Créer un bien
 exports.createBien = async (req, res, next) => {
   try {
-    const { titre, description, type_id, zone_id, adresse, latitude, longitude, prix, tarifs, images } = req.body;
+    const { titre, description, type_id, zone_id, adresse, latitude, longitude, prix, tarifs, images, chambres, salles_bain, surface } = req.body;
     const proprietaire_id = req.user.id;
 
     // Créer le bien
@@ -18,6 +37,9 @@ exports.createBien = async (req, res, next) => {
       latitude,
       longitude,
       prix,
+      chambres,
+      salles_bain,
+      surface,
       status_id: 1 // En attente de validation
     });
 
@@ -44,6 +66,10 @@ exports.createBien = async (req, res, next) => {
       }
     }
 
+    bienChanged(bien, 'created');
+    await Promise.all((await User.findAll({ include: [{ association: 'role', where: { nom: 'admin' } }], attributes: ['id'] }))
+      .map(a => notify(a.id, 'Bien à valider', `« ${bien.titre} » attend votre validation`)));
+
     // Récupérer le bien complet
     const bienComplet = await Bien.findByPk(bien.id, {
       include: [
@@ -68,7 +94,7 @@ exports.createBien = async (req, res, next) => {
 // Obtenir tous les biens (avec filtres)
 exports.getAllBiens = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, type_id, zone_id, prix_min, prix_max, status_id, search } = req.query;
+    const { page = 1, limit = 9, type_id, zone_id, prix_min, prix_max, search, chambres_min } = req.query;
     const offset = (page - 1) * limit;
 
     // Construire les filtres
@@ -76,8 +102,8 @@ exports.getAllBiens = async (req, res, next) => {
     
     if (type_id) where.type_id = type_id;
     if (zone_id) where.zone_id = zone_id;
-    if (status_id) where.status_id = status_id;
-    else where.status_id = 2; // Par défaut, seulement les biens validés
+    where.status_id = 2; // Le catalogue public ne montre que les biens validés
+    if (chambres_min) where.chambres = { [Op.gte]: chambres_min };
     
     if (prix_min || prix_max) {
       where.prix = {};
@@ -108,7 +134,8 @@ exports.getAllBiens = async (req, res, next) => {
       ],
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [['date_ajout', 'DESC']]
+      order: [['date_ajout', 'DESC']],
+      distinct: true
     });
 
     res.status(200).json({
@@ -188,7 +215,7 @@ exports.updateBien = async (req, res, next) => {
     }
 
     // Mettre à jour le bien
-    const { titre, description, type_id, zone_id, adresse, latitude, longitude, prix } = req.body;
+    const { titre, description, type_id, zone_id, adresse, latitude, longitude, prix, chambres, salles_bain, surface } = req.body;
     
     await bien.update({
       titre: titre || bien.titre,
@@ -198,8 +225,28 @@ exports.updateBien = async (req, res, next) => {
       adresse: adresse || bien.adresse,
       latitude: latitude || bien.latitude,
       longitude: longitude || bien.longitude,
-      prix: prix || bien.prix
+      prix: prix || bien.prix,
+      chambres: chambres !== undefined ? chambres : bien.chambres,
+      salles_bain: salles_bain !== undefined ? salles_bain : bien.salles_bain,
+      surface: surface !== undefined ? surface : bien.surface,
+      // un bien modifié par son propriétaire repasse en validation
+      ...(userRole !== 'admin' ? { status_id: 1, raison_refus: null } : {})
     });
+
+    if (Array.isArray(req.body.images)) {
+      await BienImage.destroy({ where: { bien_id: bien.id } });
+      for (let i = 0; i < req.body.images.length; i++) {
+        await BienImage.create({ bien_id: bien.id, url_image: req.body.images[i], ordre: i + 1 });
+      }
+    }
+    if (Array.isArray(req.body.tarifs)) {
+      await Tarif.destroy({ where: { bien_id: bien.id } });
+      for (const t of req.body.tarifs) {
+        await Tarif.create({ bien_id: bien.id, type_tarif: t.type_tarif, montant: t.montant, devise: t.devise || 'XOF' });
+      }
+    }
+
+    bienChanged(bien, 'updated');
 
     // Récupérer le bien mis à jour
     const bienMisAJour = await Bien.findByPk(id, {
@@ -245,7 +292,21 @@ exports.deleteBien = async (req, res, next) => {
       });
     }
 
-    await bien.destroy();
+    // Un bien avec des transactions garde son historique : on refuse la suppression
+    if (await Transaction.count({ where: { bien_id: bien.id } })) {
+      return res.status(409).json({
+        status: 'error',
+        message: 'Ce bien a des transactions : il ne peut pas être supprimé (historique conservé).'
+      });
+    }
+
+    // Sinon on supprime le bien et ses données liées en une seule transaction SQL
+    await sequelize.transaction(async (t) => {
+      const opts = { where: { bien_id: bien.id }, transaction: t };
+      await Promise.all([BienImage, Tarif, Caution, Acompte, Favori, Demande].map(M => M.destroy(opts)));
+      await bien.destroy({ transaction: t });
+    });
+    bienChanged(bien, 'deleted');
 
     res.status(200).json({
       status: 'success',
@@ -284,6 +345,14 @@ exports.validerBien = async (req, res, next) => {
     }
 
     await bien.save();
+    await notify(
+      bien.proprietaire_id,
+      action === 'valider' ? 'Bien validé' : 'Bien refusé',
+      action === 'valider'
+        ? `Votre bien « ${bien.titre} » est maintenant en ligne`
+        : `Votre bien « ${bien.titre} » a été refusé : ${raison_refus || 'sans motif précisé'}`
+    );
+    bienChanged(bien, action === 'valider' ? 'validated' : 'refused');
 
     res.status(200).json({
       status: 'success',
@@ -313,7 +382,8 @@ exports.getMesBiens = async (req, res, next) => {
       ],
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [['date_ajout', 'DESC']]
+      order: [['date_ajout', 'DESC']],
+      distinct: true
     });
 
     res.status(200).json({
@@ -331,4 +401,38 @@ exports.getMesBiens = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+// Tous les biens, tous statuts confondus (Admin)
+exports.getAllBiensAdmin = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 10, status_id } = req.query;
+    const offset = (page - 1) * limit;
+    const where = status_id ? { status_id } : {};
+
+    const { count, rows: biens } = await Bien.findAndCountAll({
+      where,
+      include: fullInclude(),
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['date_ajout', 'DESC']],
+      distinct: true
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        biens,
+        pagination: { total: count, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(count / limit) }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Téléversement d'images de biens : renvoie les URLs publiques
+exports.uploadImages = (req, res) => {
+  const urls = (req.files || []).map(f => `/uploads/biens/${f.filename}`);
+  res.status(201).json({ status: 'success', data: { urls } });
 };

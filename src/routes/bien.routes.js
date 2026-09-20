@@ -3,6 +3,7 @@ const router = express.Router();
 const bienController = require('../controllers/bienController');
 const auth = require('../middlewares/auth');
 const checkRole = require('../middlewares/roleCheck');
+const upload = require('../middlewares/upload');
 
 /**
  * @route   GET /api/v1/biens
@@ -17,6 +18,10 @@ router.get('/', bienController.getAllBiens);
  * @access  Private (Partenaire)
  */
 router.get('/mes-biens', auth, checkRole('partenaire', 'admin'), bienController.getMesBiens);
+
+router.get('/admin/tous', auth, checkRole('admin'), bienController.getAllBiensAdmin);
+
+router.post('/images-bien', auth, checkRole('partenaire', 'admin'), upload.array('images', 10), bienController.uploadImages);
 
 /**
  * @route   GET /api/v1/biens/:id

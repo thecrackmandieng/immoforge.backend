@@ -1,6 +1,8 @@
 // ============ src/routes/user.routes.js ============
 const { User, Role } = require('../models');
+const realtime = require('../services/realtime');
 const express = require('express');
+const { Op } = require('sequelize');
 const auth = require('../middlewares/auth');
 const checkRole = require('../middlewares/roleCheck');
 
@@ -9,11 +11,15 @@ const router4 = express.Router();
 // Obtenir tous les utilisateurs (Admin only)
 router4.get('/', auth, checkRole('admin'), async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, role_id } = req.query;
+    const { page = 1, limit = 10, role_id, search } = req.query;
     const offset = (page - 1) * limit;
 
     const where = {};
     if (role_id) where.role_id = role_id;
+    if (search) {
+      const like = { [Op.like]: `%${search}%` };
+      where[Op.or] = [{ email: like }, { nom: like }, { prenom: like }];
+    }
 
     const { count, rows: users } = await User.findAndCountAll({
       where,
@@ -80,6 +86,14 @@ router4.put('/:id/statut', auth, checkRole('admin'), async (req, res, next) => {
 
     user.statut = statut;
     await user.save();
+
+    realtime.toUser(user.id, 'user:changed', { id: user.id, statut });
+    realtime.toRole('admin', 'user:changed', { id: user.id, statut, action: 'status' });
+    // compte suspendu : on coupe la session en cours
+    if (statut !== 'actif') {
+      realtime.toUser(user.id, 'session:revoked', { reason: 'Votre compte a été suspendu par un administrateur.' });
+      realtime.disconnectUser(user.id);
+    }
 
     res.status(200).json({
       status: 'success',

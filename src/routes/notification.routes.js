@@ -22,6 +22,16 @@ router6.get('/', auth, async (req, res, next) => {
   }
 });
 
+// Tout marquer comme lu
+router6.put('/lire-tout', auth, async (req, res, next) => {
+  try {
+    await Notification.update({ est_lu: true }, { where: { user_id: req.user.id, est_lu: false } });
+    res.status(200).json({ status: 'success', message: 'Notifications marquées comme lues' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Marquer une notification comme lue
 router6.put('/:id/lire', auth, async (req, res, next) => {
   try {

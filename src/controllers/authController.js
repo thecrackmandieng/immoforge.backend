@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { User, Role } = require('../models');
 const jwtConfig = require('../config/jwt');
+const realtime = require('../services/realtime');
 
 // Générer un token JWT
 const generateToken = (userId) => {
@@ -31,6 +32,14 @@ exports.register = async (req, res, next) => {
       });
     }
 
+    // Seuls les rôles publics sont auto-attribuables (jamais admin)
+    if (!['client', 'partenaire'].includes(role_nom)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Rôle invalide'
+      });
+    }
+
     // Récupérer le rôle
     const role = await Role.findOne({ where: { nom: role_nom } });
     if (!role) {
@@ -50,6 +59,8 @@ exports.register = async (req, res, next) => {
       role_id: role.id,
       statut: 'actif'
     });
+
+    realtime.toRole('admin', 'user:changed', { id: user.id, action: 'created' });
 
     // Générer le token
     const token = generateToken(user.id);
@@ -194,6 +205,8 @@ exports.updateProfile = async (req, res, next) => {
       attributes: { exclude: ['mot_de_passe'] }
     });
 
+    realtime.toRole('admin', 'user:changed', { id: userId, action: 'profile' });
+
     res.status(200).json({
       status: 'success',
       message: 'Profil mis à jour avec succès',
@@ -239,4 +252,12 @@ exports.changePassword = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+// Mot de passe oublié : réponse générique (aucun service d'e-mail n'est configuré)
+exports.forgotPassword = async (req, res) => {
+  res.status(200).json({
+    status: 'success',
+    message: 'Si un compte existe avec cet email, des instructions de réinitialisation seront envoyées.'
+  });
 };

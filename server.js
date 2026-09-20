@@ -1,5 +1,7 @@
 require('dotenv').config();
+const http = require('http');
 const app = require('./src/app');
+const realtime = require('./src/services/realtime');
 const { sequelize } = require('./src/models');
 
 const PORT = process.env.PORT || 3000;
@@ -18,10 +20,14 @@ const startServer = async () => {
     }
 
     // Démarrer le serveur
-    app.listen(PORT, () => {
+    const server = http.createServer(app);
+    realtime.init(server);
+
+    server.listen(PORT, () => {
       console.log(`🚀 Serveur ImmorForge démarré sur le port ${PORT}`);
       console.log(`📍 Environment: ${process.env.NODE_ENV}`);
       console.log(`🔗 API: http://localhost:${PORT}/api/v1`);
+      console.log('⚡ Temps réel (Socket.IO) actif');
     });
   } catch (error) {
     console.error('❌ Erreur lors du démarrage du serveur:', error);

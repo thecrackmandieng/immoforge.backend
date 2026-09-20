@@ -2,6 +2,8 @@
 
 API REST complète pour la plateforme immobilière ImmorForge au Sénégal.
 
+> Comptes de connexion de démonstration et accès aux écrans : voir le [README à la racine](../README.md). Après `node seed.js`, lancez `node seed-demo.js` pour créer les comptes propriétaire et client.
+
 ## 📋 Table des matières
 
 - [Installation](#installation)

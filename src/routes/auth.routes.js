@@ -16,6 +16,7 @@ router.post('/register', authController.register);
  * @access  Public
  */
 router.post('/login', authController.login);
+router.post('/forgot-password', authController.forgotPassword);
 
 /**
  * @route   GET /api/v1/auth/profile

@@ -9,6 +9,10 @@ const transactionRoutes = require('./transaction.routes');
 const favoriRoutes = require('./favori.routes');
 const messageRoutes = require('./message.routes');
 const notificationRoutes = require('./notification.routes');
+const refRoutes = require('./ref.routes');
+const statsRoutes = require('./stats.routes');
+const contactRoutes = require('./contact.routes');
+const adminRoutes = require('./admin.routes');
 
 // Documentation de l'API
 router.get('/', (req, res) => {
@@ -37,5 +41,9 @@ router.use('/transactions', transactionRoutes);
 router.use('/favoris', favoriRoutes);
 router.use('/messages', messageRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/refs', refRoutes);
+router.use('/stats', statsRoutes);
+router.use('/contact', contactRoutes);
+router.use('/admin', adminRoutes);
 
 module.exports = router;
